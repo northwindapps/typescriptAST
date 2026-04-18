@@ -1,0 +1,19 @@
+{
+  "name": "typescript-ast",
+  "version": "1.0.0",
+  "description": "TypeScript AST example",
+  "main": "main.js",
+  "type": "module",
+  "ts-node": {
+    "esm": true
+  },
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
+  }
+}
