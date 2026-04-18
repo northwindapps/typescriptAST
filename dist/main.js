@@ -28,23 +28,25 @@ class MathParser {
         return left;
     }
     parseFactor() {
-        let left = this.parsePower();
-        if (this.peek() === '^') {
-            this.consume();
-            const right = this.parseFactor();
-            return { type: 'BinaryOp', left, right, operator: '^' };
-        }
-        return left;
+        return this.parsePower();
     }
-    parsePower() {
+    parseAtom() {
+        let sign = 1;
+        if (this.peek() === '-') {
+            this.consume();
+            sign = -1;
+        }
+        else if (this.peek() === '+') {
+            this.consume();
+        }
+        let atom;
         if (this.peek() === '(') {
             this.consume(); // '('
-            const expr = this.parseExpression();
+            atom = this.parseExpression();
             this.expect(')');
-            return expr;
         }
-        else if (this.isDigit(this.peek())) {
-            return this.parseNumber();
+        else if (this.isDigit(this.peek()) || this.peek() === '.') {
+            atom = this.parseNumber();
         }
         else if (this.isLetter(this.peek())) {
             const name = this.parseIdentifier();
@@ -59,20 +61,39 @@ class MathParser {
                     }
                 }
                 this.expect(')');
-                return { type: 'FunctionCall', name, args };
+                atom = { type: 'FunctionCall', name, args };
             }
             else {
-                return { type: 'Variable', name };
+                atom = { type: 'Variable', name };
             }
         }
-        throw new Error(`Unexpected character: ${this.peek()}`);
+        else {
+            throw new Error(`Unexpected character: ${this.peek()}`);
+        }
+        if (sign === -1) {
+            return { type: 'UnaryOp', operator: '-', operand: atom };
+        }
+        return atom;
+    }
+    parsePower() {
+        let left = this.parseAtom();
+        if (this.peek() === '^') {
+            this.consume();
+            const right = this.parsePower();
+            return { type: 'BinaryOp', left, right, operator: '^' };
+        }
+        return left;
     }
     parseNumber() {
         let num = '';
-        while (this.pos < this.input.length && this.isDigit(this.peek())) {
+        while (this.pos < this.input.length && (this.isDigit(this.peek()) || this.peek() === '.')) {
             num += this.consume();
         }
-        return { type: 'NumberLiteral', value: parseFloat(num) };
+        const value = parseFloat(num);
+        if (isNaN(value)) {
+            throw new Error(`Invalid number: ${num}`);
+        }
+        return { type: 'NumberLiteral', value };
     }
     parseIdentifier() {
         let id = '';
@@ -112,6 +133,11 @@ function printCustomAST(node, indent = '') {
         printCustomAST(bin.left, indent + '  ');
         printCustomAST(bin.right, indent + '  ');
     }
+    else if (node.type === 'UnaryOp') {
+        const un = node;
+        console.log(`${indent}  Operator: ${un.operator}`);
+        printCustomAST(un.operand, indent + '  ');
+    }
     else if (node.type === 'FunctionCall') {
         const func = node;
         console.log(`${indent}  Name: ${func.name}`);
@@ -127,10 +153,85 @@ function printCustomAST(node, indent = '') {
         console.log(`${indent}  Value: ${node.value}`);
     }
 }
+// Function to evaluate the AST to a numerical value
+function evaluate(node) {
+    if (node.type === 'BinaryOp') {
+        const bin = node;
+        const left = evaluate(bin.left);
+        const right = evaluate(bin.right);
+        switch (bin.operator) {
+            case '+': return left + right;
+            case '-': return left - right;
+            case '*': return left * right;
+            case '/': return left / right;
+            case '^': return Math.pow(left, right);
+            default: throw new Error(`Unknown operator: ${bin.operator}`);
+        }
+    }
+    else if (node.type === 'UnaryOp') {
+        const un = node;
+        const operand = evaluate(un.operand);
+        switch (un.operator) {
+            case '-': return -operand;
+            default: throw new Error(`Unknown unary operator: ${un.operator}`);
+        }
+    }
+    else if (node.type === 'FunctionCall') {
+        const func = node;
+        const args = func.args.map(arg => evaluate(arg));
+        switch (func.name) {
+            case 'log10': return Math.log10(args[0]);
+            // Add more functions as needed
+            default: throw new Error(`Unknown function: ${func.name}`);
+        }
+    }
+    else if (node.type === 'Variable') {
+        const name = node.name.toLowerCase();
+        const constants = {
+            pi: Math.PI,
+            e: Math.E,
+        };
+        if (name in constants) {
+            return constants[name];
+        }
+        throw new Error(`Variable ${name} not defined`);
+    }
+    else if (node.type === 'NumberLiteral') {
+        return node.value;
+    }
+    throw new Error(`Unknown node type: ${node.type}`);
+}
+// Function to generate Reverse Polish Notation (RPN) from AST
+function toRPN(node) {
+    if (node.type === 'BinaryOp') {
+        const bin = node;
+        return `${toRPN(bin.left)} ${toRPN(bin.right)} ${bin.operator}`;
+    }
+    else if (node.type === 'UnaryOp') {
+        const un = node;
+        return `${toRPN(un.operand)} ${un.operator}`;
+    }
+    else if (node.type === 'FunctionCall') {
+        const func = node;
+        const args = func.args.map(arg => toRPN(arg)).join(' ');
+        return `${args} ${func.name}`;
+    }
+    else if (node.type === 'Variable') {
+        return node.name;
+    }
+    else if (node.type === 'NumberLiteral') {
+        return node.value.toString();
+    }
+    return '';
+}
 // Parse the math expression
-const mathExpression = 'log10(x^2-y^2)';
+const mathExpression = '(-5)^2 + 7^-2.5 - 3*4/2 + pi';
 const parser = new MathParser(mathExpression);
 const ast = parser.parse();
 console.log('Custom Math AST:');
 printCustomAST(ast);
+console.log('\nReverse Polish Notation (RPN):');
+console.log(toRPN(ast));
+console.log('\nEvaluated Result:');
+console.log(evaluate(ast));
 export {};

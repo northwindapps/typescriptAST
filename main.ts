@@ -28,6 +28,12 @@ interface NumberLiteral extends ASTNode {
   value: number;
 }
 
+interface UnaryOp extends ASTNode {
+  type: 'UnaryOp';
+  operator: string;
+  operand: ASTNode;
+}
+
 // Simple recursive descent parser for math expressions
 class MathParser {
   private input: string;
@@ -63,23 +69,24 @@ class MathParser {
   }
 
   private parseFactor(): ASTNode {
-    let left = this.parsePower();
-    if (this.peek() === '^') {
-      this.consume();
-      const right = this.parseFactor();
-      return { type: 'BinaryOp', left, right, operator: '^' } as BinaryOp;
-    }
-    return left;
+    return this.parsePower();
   }
 
-  private parsePower(): ASTNode {
+  private parseAtom(): ASTNode {
+    let sign = 1;
+    if (this.peek() === '-') {
+      this.consume();
+      sign = -1;
+    } else if (this.peek() === '+') {
+      this.consume();
+    }
+    let atom: ASTNode;
     if (this.peek() === '(') {
       this.consume(); // '('
-      const expr = this.parseExpression();
+      atom = this.parseExpression();
       this.expect(')');
-      return expr;
-    } else if (this.isDigit(this.peek())) {
-      return this.parseNumber();
+    } else if (this.isDigit(this.peek()) || this.peek() === '.') {
+      atom = this.parseNumber();
     } else if (this.isLetter(this.peek())) {
       const name = this.parseIdentifier();
       if (this.peek() === '(') {
@@ -93,20 +100,39 @@ class MathParser {
           }
         }
         this.expect(')');
-        return { type: 'FunctionCall', name, args } as FunctionCall;
+        atom = { type: 'FunctionCall', name, args } as FunctionCall;
       } else {
-        return { type: 'Variable', name } as Variable;
+        atom = { type: 'Variable', name } as Variable;
       }
+    } else {
+      throw new Error(`Unexpected character: ${this.peek()}`);
     }
-    throw new Error(`Unexpected character: ${this.peek()}`);
+    if (sign === -1) {
+      return { type: 'UnaryOp', operator: '-', operand: atom } as UnaryOp;
+    }
+    return atom;
+  }
+
+  private parsePower(): ASTNode {
+    let left = this.parseAtom();
+    if (this.peek() === '^') {
+      this.consume();
+      const right = this.parsePower();
+      return { type: 'BinaryOp', left, right, operator: '^' } as BinaryOp;
+    }
+    return left;
   }
 
   private parseNumber(): NumberLiteral {
     let num = '';
-    while (this.pos < this.input.length && this.isDigit(this.peek())) {
+    while (this.pos < this.input.length && (this.isDigit(this.peek()) || this.peek() === '.')) {
       num += this.consume();
     }
-    return { type: 'NumberLiteral', value: parseFloat(num) };
+    const value = parseFloat(num);
+    if (isNaN(value)) {
+      throw new Error(`Invalid number: ${num}`);
+    }
+    return { type: 'NumberLiteral', value };
   }
 
   private parseIdentifier(): string {
@@ -152,6 +178,10 @@ function printCustomAST(node: ASTNode, indent: string = ''): void {
     console.log(`${indent}  Operator: ${bin.operator}`);
     printCustomAST(bin.left, indent + '  ');
     printCustomAST(bin.right, indent + '  ');
+  } else if (node.type === 'UnaryOp') {
+    const un = node as UnaryOp;
+    console.log(`${indent}  Operator: ${un.operator}`);
+    printCustomAST(un.operand, indent + '  ');
   } else if (node.type === 'FunctionCall') {
     const func = node as FunctionCall;
     console.log(`${indent}  Name: ${func.name}`);
@@ -166,10 +196,81 @@ function printCustomAST(node: ASTNode, indent: string = ''): void {
   }
 }
 
+// Function to evaluate the AST to a numerical value
+function evaluate(node: ASTNode): number {
+  if (node.type === 'BinaryOp') {
+    const bin = node as BinaryOp;
+    const left = evaluate(bin.left);
+    const right = evaluate(bin.right);
+    switch (bin.operator) {
+      case '+': return left + right;
+      case '-': return left - right;
+      case '*': return left * right;
+      case '/': return left / right;
+      case '^': return Math.pow(left, right);
+      default: throw new Error(`Unknown operator: ${bin.operator}`);
+    }
+  } else if (node.type === 'UnaryOp') {
+    const un = node as UnaryOp;
+    const operand = evaluate(un.operand);
+    switch (un.operator) {
+      case '-': return -operand;
+      default: throw new Error(`Unknown unary operator: ${un.operator}`);
+    }
+  } else if (node.type === 'FunctionCall') {
+    const func = node as FunctionCall;
+    const args = func.args.map(arg => evaluate(arg));
+    switch (func.name) {
+      case 'log10': return Math.log10(args[0]);
+      // Add more functions as needed
+      default: throw new Error(`Unknown function: ${func.name}`);
+    }
+  } else if (node.type === 'Variable') {
+    const name = (node as Variable).name.toLowerCase();
+    const constants: Record<string, number> = {
+      pi: Math.PI,
+      e: Math.E,
+    };
+    if (name in constants) {
+      return constants[name];
+    }
+    throw new Error(`Variable ${name} not defined`);
+  } else if (node.type === 'NumberLiteral') {
+    return (node as NumberLiteral).value;
+  }
+  throw new Error(`Unknown node type: ${node.type}`);
+}
+
+// Function to generate Reverse Polish Notation (RPN) from AST
+function toRPN(node: ASTNode): string {
+  if (node.type === 'BinaryOp') {
+    const bin = node as BinaryOp;
+    return `${toRPN(bin.left)} ${toRPN(bin.right)} ${bin.operator}`;
+  } else if (node.type === 'UnaryOp') {
+    const un = node as UnaryOp;
+    return `${toRPN(un.operand)} ${un.operator}`;
+  } else if (node.type === 'FunctionCall') {
+    const func = node as FunctionCall;
+    const args = func.args.map(arg => toRPN(arg)).join(' ');
+    return `${args} ${func.name}`;
+  } else if (node.type === 'Variable') {
+    return (node as Variable).name;
+  } else if (node.type === 'NumberLiteral') {
+    return (node as NumberLiteral).value.toString();
+  }
+  return '';
+}
+
 // Parse the math expression
-const mathExpression = 'log10(x^2-y^2)';
+const mathExpression = '(-5)^2 + 7^-2.5 - 3*4/2 + pi';
 const parser = new MathParser(mathExpression);
 const ast = parser.parse();
 
 console.log('Custom Math AST:');
 printCustomAST(ast);
+
+console.log('\nReverse Polish Notation (RPN):');
+console.log(toRPN(ast));
+
+console.log('\nEvaluated Result:');
+console.log(evaluate(ast));
