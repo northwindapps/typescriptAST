@@ -206,8 +206,18 @@ function evaluate(node: ASTNode): number {
       case '+': return left + right;
       case '-': return left - right;
       case '*': return left * right;
-      case '/': return left / right;
-      case '^': return Math.pow(left, right);
+      case '/': {
+        if (right === 0) {
+          throw new Error('Division by zero');
+        }
+        return left / right;
+      }
+      case '^': {
+        if (left === 0 && right === 0) {
+          throw new Error('0^0 is undefined');
+        }
+        return Math.pow(left, right);
+      }
       default: throw new Error(`Unknown operator: ${bin.operator}`);
     }
   } else if (node.type === 'UnaryOp') {
@@ -221,8 +231,63 @@ function evaluate(node: ASTNode): number {
     const func = node as FunctionCall;
     const args = func.args.map(arg => evaluate(arg));
     switch (func.name) {
-      case 'log10': return Math.log10(args[0]);
-      // Add more functions as needed
+      // Logarithmic and exponential
+      case 'log10': {
+        if (args[0] <= 0) {
+          throw new Error(`log10 domain error: argument ${args[0]} must be positive`);
+        }
+        return Math.log10(args[0]);
+      }
+      case 'log': {
+        if (args[0] <= 0) {
+          throw new Error(`log domain error: argument ${args[0]} must be positive`);
+        }
+        return Math.log(args[0]);
+      }
+      case 'log2': {
+        if (args[0] <= 0) {
+          throw new Error(`log2 domain error: argument ${args[0]} must be positive`);
+        }
+        return Math.log2(args[0]);
+      }
+      case 'ln': {
+        if (args[0] <= 0) {
+          throw new Error(`ln domain error: argument ${args[0]} must be positive`);
+        }
+        return Math.log(args[0]);
+      }
+      case 'exp': return Math.exp(args[0]);
+      // Trigonometric
+      case 'sin': return Math.sin(args[0]);
+      case 'cos': return Math.cos(args[0]);
+      case 'tan': return Math.tan(args[0]);
+      case 'asin': {
+        if (args[0] < -1 || args[0] > 1) {
+          throw new Error(`asin domain error: argument ${args[0]} must be in [-1, 1]`);
+        }
+        return Math.asin(args[0]);
+      }
+      case 'acos': {
+        if (args[0] < -1 || args[0] > 1) {
+          throw new Error(`acos domain error: argument ${args[0]} must be in [-1, 1]`);
+        }
+        return Math.acos(args[0]);
+      }
+      case 'atan': return Math.atan(args[0]);
+      // Rounding
+      case 'floor': return Math.floor(args[0]);
+      case 'ceil': return Math.ceil(args[0]);
+      case 'round': return Math.round(args[0]);
+      // Other common functions
+      case 'abs': return Math.abs(args[0]);
+      case 'sqrt': {
+        if (args[0] < 0) {
+          throw new Error(`sqrt domain error: argument ${args[0]} must be non-negative`);
+        }
+        return Math.sqrt(args[0]);
+      }
+      case 'min': return Math.min(...args);
+      case 'max': return Math.max(...args);
       default: throw new Error(`Unknown function: ${func.name}`);
     }
   } else if (node.type === 'Variable') {
@@ -262,15 +327,49 @@ function toRPN(node: ASTNode): string {
 }
 
 // Parse the math expression
-const mathExpression = '(-5)^2 + 7^-2.5 - 3*4/2 + pi';
-const parser = new MathParser(mathExpression);
-const ast = parser.parse();
+const testExpressions = [
+  '(-5)^2 + 7^-2.5 - 3*4/2 + pi',
+  'sqrt(16) + abs(-5)',
+  'sin(0) + cos(0)',
+  'floor(3.7) + ceil(3.2)',
+  '(2+3)*(4-1)',
+  'log10(100) + log2(8)',
+  'max(5,10,3) - min(5,10,3)',
+  'sqrt((3^2)+(4^2))',
+  '(pi/2)*180',
+  'log10(1.0^2-1.0^2)',
+  '-5^2+25',
+  'asin(1)',
+  'acos(-1)',
+  'asin(2)',  // Domain error
+  'acos(1.5)', // Domain error
+  '5/0',       // Division by zero
+  '0^0',       // Undefined
+  '0^2',       // Works
+  'log(0)',    // Domain error
+  'log(-1)',   // Domain error
+  'sqrt(-1)',  // Domain error
+  '(-2)^0.5',  // Complex result (not handled)
+  'exp(1000)', // Overflow to Infinity
+  '1e-1000',   // Underflow to 0
+  'tan(pi/2)', // Large value (precision issue)
+];
 
-console.log('Custom Math AST:');
-printCustomAST(ast);
-
-console.log('\nReverse Polish Notation (RPN):');
-console.log(toRPN(ast));
-
-console.log('\nEvaluated Result:');
-console.log(evaluate(ast));
+testExpressions.forEach(mathExpression => {
+  console.log(`\n=== Expression: ${mathExpression} ===`);
+  try {
+    const parser = new MathParser(mathExpression);
+    const ast = parser.parse();
+    
+    console.log('Custom Math AST:');
+    printCustomAST(ast);
+    
+    console.log('\nReverse Polish Notation (RPN):');
+    console.log(toRPN(ast));
+    
+    console.log('\nEvaluated Result:');
+    console.log(evaluate(ast));
+  } catch (e) {
+    console.log(`Error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+});
