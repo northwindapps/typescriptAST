@@ -60,7 +60,7 @@ class MathParser {
 
   private parseTerm(): ASTNode {
     let left = this.parseFactor();
-    while (this.peek() === '*' || this.peek() === '/') {
+    while (this.peek() === '*' || this.peek() === '/' || this.peek() === '%') {
       const op = this.consume();
       const right = this.parseFactor();
       left = { type: 'BinaryOp', left, right, operator: op } as BinaryOp;
@@ -212,6 +212,12 @@ function evaluate(node: ASTNode): number {
         }
         return left / right;
       }
+      case '%': {
+        if (right === 0) {
+          throw new Error('Modulo by zero');
+        }
+        return left % right;
+      }
       case '^': {
         if (left === 0 && right === 0) {
           throw new Error('0^0 is undefined');
@@ -353,6 +359,10 @@ const testExpressions = [
   'exp(1000)', // Overflow to Infinity
   '1e-1000',   // Underflow to 0
   'tan(pi/2)', // Large value (precision issue)
+  '17%5',      // Modulo
+  '10%3',      // Modulo
+  '7%7',       // Modulo (should be 0)
+  '5%0',       // Modulo by zero
 ];
 
 testExpressions.forEach(mathExpression => {
